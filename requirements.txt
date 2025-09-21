@@ -5,3 +5,4 @@ transformers
 torch
 ffmpeg-python
 python-dotenv
+opencc-python-reimplemented
