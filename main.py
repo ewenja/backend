@@ -4,7 +4,6 @@ import tempfile, os, ffmpeg
 from transformers import pipeline
 from opencc import OpenCC
 
-# 初始化 FastAPI
 app = FastAPI()
 
 # CORS
@@ -16,13 +15,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-asr = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1)
+# 延遲初始化 ASR
+asr = None
+
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Server started, waiting for first ASR request...")
 
 @app.post("/upload")
 async def upload_video(
     file: UploadFile = File(...),
-    lang: str = Form("traditional")  # 新增語言參數，預設繁體
+    lang: str = Form("traditional")
 ):
+    global asr
+    if asr is None:
+        print("⏳ Loading Whisper model...")
+        asr = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1)
+
     # 暫存檔案
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp:
         temp.write(await file.read())
@@ -37,12 +46,8 @@ async def upload_video(
     transcript = result["text"]
 
     # 繁體 / 簡體轉換
-    if lang == "simplified":
-        cc = OpenCC("t2s")  # 繁 -> 簡
-        transcript = cc.convert(transcript)
-    else:
-        cc = OpenCC("s2t")  # 簡 -> 繁
-        transcript = cc.convert(transcript)
+    cc = OpenCC("t2s") if lang == "simplified" else OpenCC("s2t")
+    transcript = cc.convert(transcript)
 
     # 模擬 GPT 摘要
     summary = "、".join(transcript.split("。")[:5]) + "。"
